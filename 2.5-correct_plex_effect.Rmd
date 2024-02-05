@@ -1,0 +1,133 @@
+---
+title: "Ex18 Phospho proteomics"
+output: html_document
+---
+
+Preliminary summary
+
+
+
+
+```{r include=FALSE}
+library(MSnSet.utils)
+library(clusterProfiler)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(pheatmap)
+library(msigdbr)
+library(stringr)
+
+global_crosstab <- read.table("data/global_data/ptrc_ex19_crosstab_global_gene_median_centered.txt", sep = "\t")
+phospho_crosstab <- read.table("data/phospho_data/ptrc_ex19_crosstab_phospho_SiteID_median_centered.txt", sep = "\t")
+phospho_Y_crosstab <- read.table("data/phospho_data_tyrosine/ptrc_ex19_tyrosene_4925_crosstab_tyrisine_4925_phospho_SiteID_median_centered.txt",
+                                 sep = "\t")
+
+meta <- read.table("data/samples.txt", sep = "\t", header = T) %>%
+  select(Sample = MeasurementName, PlexID) %>% filter(!is.na(Sample)) %>%
+  mutate(Sample = sub("/", " ", Sample),
+         PlexID = as.character(PlexID)) %>%
+  mutate(Sample = gsub(" ", "\\.", Sample),
+         bio_group_detailed = sub("Ba\\.F3\\.(.*)\\.Rep\\.[1-9]+$", "\\1", Sample),
+         bio_group = sub('^([A-Za-z1-9]+)\\..+$', "\\1", bio_group_detailed))
+rownames(meta) <- meta$Sample
+
+```
+
+
+```{r}
+global_missing <- rowSums(is.na(global_crosstab))
+phospho_missing <- rowSums(is.na(phospho_crosstab))
+phospho_Y_missing <- rowSums(is.na(phospho_Y_crosstab))
+
+hist(global_missing)
+hist(phospho_missing)
+hist(phospho_Y_missing)
+
+## 50 % missingness filter, lose 178 global features and 27205 phosphosites
+global_crosstab <- global_crosstab[global_missing < ncol(global_crosstab)/2, ]
+phospho_crosstab <- phospho_crosstab[phospho_missing < ncol(phospho_crosstab)/2, ]
+phospho_Y_crosstab <- phospho_Y_crosstab[phospho_Y_missing < ncol(phospho_Y_crosstab)/2, ]
+
+hist(rowSums(is.na(global_crosstab)))
+hist(rowSums(is.na(phospho_crosstab)))
+hist(rowSums(is.na(phospho_Y_crosstab)))
+
+```
+
+
+
+
+```{r}
+m_global <- MSnSet(exprs = global_crosstab %>% as.matrix(), 
+                   pData = meta[colnames(global_crosstab), ])
+
+m_phospho <- MSnSet(exprs = phospho_crosstab %>% as.matrix(), 
+                    pData = meta[colnames(phospho_crosstab), ])
+
+m_phospho_Y <- MSnSet(exprs = phospho_Y_crosstab %>% as.matrix(), 
+                      pData = meta[colnames(phospho_Y_crosstab), ])
+
+# plot_pca(m_global, "bio_group", label = "Sample")
+plot_pca(m_global, "bio_group") + ggtitle("Global data uncorrected")
+# plot_pca(m_global, "bio_group_detailed")
+plot_pca(m_global, "PlexID") + ggtitle("Global data uncorrected")
+
+m_global_c <- correct_batch_effect_NA(m_global, "PlexID", par.prior = T)
+# plot_pca(m_global_c, "bio_group", label = "Sample")
+plot_pca(m_global_c, "bio_group") + ggtitle("Global data corrected")
+# plot_pca(m_global_c, "bio_group_detailed")
+plot_pca(m_global_c, "PlexID") + ggtitle("Global data corrected")
+
+
+# plot_pca(m_phospho, "bio_group", label = "Sample")
+plot_pca(m_phospho, "bio_group") + ggtitle("Phospho data uncorrected")
+# plot_pca(m_phospho, "bio_group_detailed")
+plot_pca(m_phospho, "PlexID") + ggtitle("Phospho data uncorrected")
+
+m_phospho_c <- correct_batch_effect_NA(m_phospho, "PlexID", par.prior = T)
+# plot_pca(m_phospho_c, "bio_group", label = "Sample")
+plot_pca(m_phospho_c, "bio_group") + ggtitle("Phospho data corrected")
+# plot_pca(m_phospho_c, "bio_group_detailed")
+plot_pca(m_phospho_c, "PlexID") + ggtitle("Phospho data corrected")
+
+
+plot_pca(m_phospho, "bio_group", label = "Sample")
+plot_pca(m_phospho_Y, "bio_group") + ggtitle("Phospho Y data uncorrected")
+# plot_pca(m_phospho, "bio_group_detailed")
+plot_pca(m_phospho_Y, "PlexID") + ggtitle("Phospho Y data uncorrected")
+
+m_phospho_Y_c <- correct_batch_effect_NA(m_phospho_Y, "PlexID", par.prior = T)
+# plot_pca(m_phospho_c, "bio_group", label = "Sample")
+plot_pca(m_phospho_Y_c, "bio_group") + ggtitle("Phospho Y data corrected")
+# plot_pca(m_phospho_c, "bio_group_detailed")
+plot_pca(m_phospho_Y_c, "PlexID") + ggtitle("Phospho Y data corrected")
+
+```
+
+
+```{r}
+batch_effect_p <- limma_gen(m_phospho, "~PlexID", "PlexID")
+batch_effect_pY <- limma_gen(m_phospho_Y, "~PlexID", "PlexID")
+batch_effect_g <- limma_gen(m_global, "~PlexID", "PlexID")
+batch_effect_pc <- limma_gen(m_phospho_c, "~PlexID", "PlexID")
+batch_effect_pYc <- limma_gen(m_phospho_Y_c, "~PlexID", "PlexID")
+batch_effect_gc <- limma_gen(m_global_c, "~PlexID", "PlexID")
+
+hist(batch_effect_g$adj.P.Val, main = "Global batch effect, uncorrected", xlab = "adj.p.val")
+hist(batch_effect_p$adj.P.Val, main = "Phospho batch effect, uncorrected", xlab = "adj.p.val")
+hist(batch_effect_pY$adj.P.Val, main = "Phospho Y batch effect, uncorrected", xlab = "adj.p.val")
+hist(batch_effect_gc$adj.P.Val, main = "Global batch effect, corrected", xlab = "adj.p.val")
+hist(batch_effect_pc$adj.P.Val, main = "Phospho batch effect, corrected", xlab = "adj.p.val")
+hist(batch_effect_pYc$adj.P.Val, main = "Phospho Y batch effect, corrected", xlab = "adj.p.val")
+
+write.table(exprs(m_global_c), "data/global_data/ptrc_ex19_crosstab_global_gene_median_centered_corrected.txt", sep = "\t", quote = F)
+write.table(exprs(m_phospho_c), "data/phospho_data/ptrc_ex19_crosstab_phospho_SiteID_median_centered_corrected.txt", sep = "\t", quote = F)
+write.table(exprs(m_phospho_Y_c), "data/phospho_data_tyrosine/ptrc_ex19_crosstab_phospho_Y_SiteID_median_centered_corrected.txt", sep = "\t", quote = F)
+
+```
+
+```{r}
+
+
+```

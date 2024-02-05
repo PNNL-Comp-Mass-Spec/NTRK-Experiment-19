@@ -1,0 +1,429 @@
+---
+title: "Ex18 Phospho proteomics"
+output: html_document
+---
+
+Preliminary summary
+
+
+
+
+```{r include=FALSE}
+library(MSnSet.utils)
+library(clusterProfiler)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(pheatmap)
+library(msigdbr)
+library(stringr)
+
+source("../camilo_helper/helper_scripts.R")
+
+global_crosstab <- read.table("data/global_data/ptrc_ex19_crosstab_global_gene_median_centered.txt", sep = "\t")
+phospho_crosstab <- read.table("data/phospho_data/ptrc_ex19_crosstab_phospho_SiteID_median_centered.txt", sep = "\t")
+phospho_crosstab_Y <- read.table("data/phospho_data_tyrosine/ptrc_ex19_tyrosene_4925_crosstab_tyrisine_4925_phospho_SiteID_median_centered.txt", sep="\t")
+global_crosstab_c <- read.table("data/global_data/ptrc_ex19_crosstab_global_gene_median_centered_corrected.txt", sep = "\t")
+phospho_crosstab_c <- read.table("data/phospho_data/ptrc_ex19_crosstab_phospho_SiteID_median_centered_corrected.txt", sep = "\t")
+phospho_crosstab_Y_c <- read.table("data/phospho_data_tyrosine/ptrc_ex19_crosstab_phospho_Y_SiteID_median_centered_corrected.txt", sep = "\t")
+
+global_crosstab <- global_crosstab[rownames(global_crosstab_c), ]
+phospho_crosstab <- phospho_crosstab[rownames(phospho_crosstab_c), ]
+
+meta <- read.table("data/samples.txt", sep = "\t", header = T) %>%
+  select(Sample = MeasurementName, PlexID) %>% filter(!is.na(Sample)) %>%
+  mutate(Sample = sub("/", " ", Sample),
+         PlexID = as.character(PlexID)) %>%
+  mutate(Sample = gsub(" ", "\\.", Sample),
+         bio_group_detailed = sub("Ba\\.F3\\.(.*)\\.Rep\\.[1-9]+$", "\\1", Sample),
+         bio_group = sub('^([A-Za-z1-9]+)\\..+$', "\\1", bio_group_detailed),
+         bgd_ = bio_group_detailed,
+         Group = bgd_)
+rownames(meta) <- meta$Sample
+
+m_global <- MSnSet(exprs = global_crosstab %>% as.matrix(), 
+                   pData = meta[colnames(global_crosstab), ])
+
+m_phospho <- MSnSet(exprs = phospho_crosstab %>% as.matrix(), 
+                    pData = meta[colnames(phospho_crosstab), ])
+
+m_phospho_Y <- MSnSet(exprs = phospho_crosstab_Y %>% as.matrix(), 
+                      pData = meta[colnames(phospho_crosstab_Y), ])
+
+m_global_c <- MSnSet(exprs = global_crosstab_c %>% as.matrix(), 
+                     pData = meta[colnames(global_crosstab_c), ])
+
+m_phospho_c <- MSnSet(exprs = phospho_crosstab_c %>% as.matrix(), 
+                      pData = meta[colnames(phospho_crosstab_c), ])
+
+m_phospho_Y_c <- MSnSet(exprs = phospho_crosstab_Y_c %>% as.matrix(), 
+                        pData = meta[colnames(phospho_crosstab_Y_c), ])
+
+```
+
+
+```{r}
+plot_pca(m_global_c[, !(m_global_c$bgd_ %in% c("PEAR1.WT", "PEAR1.R77C", 
+                                               "PEAR1.C178Y", "MIG.Empty.Vector"))], 
+         phenotype = "Group", label = "bgd_", label_size = 2.5, max.overlaps = 10) + 
+  scale_color_manual(values = c("#F8766D", "#C49A00","#53B400","#A58AFF",
+                                "#00B6EB","#00C094","#FB61D7")) + ggtitle("Global NTRK3 PCA")
+ggsave("global_pca_corrected_NTRK3_groups_labeled.pdf")
+
+plot_pca(m_global_c[, !(m_global_c$bgd_ %in% c("PEAR1.WT", "PEAR1.R77C", 
+                                               "PEAR1.C178Y", "MIG.Empty.Vector"))], 
+         phenotype = "Group") + 
+  scale_color_manual(values = c("#F8766D", "#C49A00","#53B400","#A58AFF",
+                                "#00B6EB","#00C094","#FB61D7")) + ggtitle("Global NTRK3 PCA")
+ggsave("global_pca_corrected_NTRK3_groups.pdf")
+
+plot_pca(m_phospho_c[, !(m_phospho_c$bgd_ %in% c("PEAR1.WT", "PEAR1.R77C", 
+                                                "PEAR1.C178Y", "MIG.Empty.Vector"))], 
+         phenotype = "Group", label = "bgd_", label_size = 2.5, max.overlaps = 10) + 
+  scale_color_manual(values = c("#F8766D", "#C49A00","#53B400","#A58AFF",
+                                "#00B6EB","#00C094","#FB61D7")) + ggtitle("Phospho NTRK3 PCA")
+ggsave("phospho_pca_corrected_NTRK3_groups_labeled.pdf")
+
+plot_pca(m_phospho_c[, !(m_phospho_c$bgd_ %in% c("PEAR1.WT", "PEAR1.R77C", 
+                                                "PEAR1.C178Y", "MIG.Empty.Vector"))], 
+         phenotype = "Group") + 
+  scale_color_manual(values = c("#F8766D", "#C49A00","#53B400","#A58AFF",
+                                "#00B6EB","#00C094","#FB61D7")) + ggtitle("Phospho NTRK3 PCA")
+ggsave("phospho_pca_corrected_NTRK3_groups.pdf")
+
+plot_pca(m_phospho_Y_c[, !(m_phospho_Y_c$bgd_ %in% c("PEAR1.WT", "PEAR1.R77C", 
+                                                "PEAR1.C178Y", "MIG.Empty.Vector"))], 
+         phenotype = "Group", label = "bgd_", label_size = 2.5, max.overlaps = 10) + 
+  scale_color_manual(values = c("#F8766D", "#C49A00","#53B400","#A58AFF",
+                                "#00B6EB","#00C094","#FB61D7")) + ggtitle("Phospho Y NTRK3 PCA")
+ggsave("phospho_Y_pca_corrected_NTRK3_groups_labeled.pdf")
+
+plot_pca(m_phospho_Y_c[, !(m_phospho_Y_c$bgd_ %in% c("PEAR1.WT", "PEAR1.R77C", 
+                                                "PEAR1.C178Y", "MIG.Empty.Vector"))], 
+         phenotype = "Group") + 
+  scale_color_manual(values = c("#F8766D", "#C49A00","#53B400","#A58AFF",
+                                "#00B6EB","#00C094","#FB61D7")) + ggtitle("Phospho Y NTRK3 PCA")
+ggsave("phospho_Y_pca_corrected_NTRK3_groups.pdf")
+
+source("util/synapseUtil.R")
+
+synapseLogin()
+# synapseStore("global_pca_corrected_NTRK3_groups_labeled.pdf", parentId = "syn51628500")
+# synapseStore("global_pca_corrected_NTRK3_groups.pdf", parentId = "syn51628500")
+# synapseStore("phospho_pca_corrected_NTRK3_groups_labeled.pdf", parentId = "syn51628500")
+# synapseStore("phospho_pca_corrected_NTRK3_groups.pdf", parentId = "syn51628500")
+# synapseStore("phospho_Y_pca_corrected_NTRK3_groups_labeled.pdf", parentId = "syn51628500")
+# synapseStore("phospho_Y_pca_corrected_NTRK3_groups.pdf", parentId = "syn51628500")
+
+```
+
+
+
+```{r Heatmap helper}
+diffexp_helper <- function(m, contrast, prefix = ""){
+  limma_res <- limma_contrasts(m, model.str = "~0 + bgd_", 
+                               coef.str = "bgd_", contrasts = contrast)
+  
+  p_values_t_test <- vector(mode="character", length = nrow(limma_res))
+  p_values_welch_test <- vector(mode="character", length = nrow(limma_res))
+  contrast_groups <- str_split(contrast, "-")[[1]] %>%
+      sub("bgd_", "", .)
+  
+  if (nchar(prefix) > 0 & !grepl("_", prefix)){
+    prefix = paste0(prefix, "_")
+  }
+  tbl_path <- paste0("Differential Expression tables/", prefix, "diffexp_", contrast_groups[[1]], "_", contrast_groups[[2]], ".txt")
+  
+  m <- m[, m$bgd_ %in% contrast_groups]
+  counter = 1
+  for (feature in limma_res$feature){
+    data_df <- data.frame(value = exprs(m)[feature, ],
+                          sample = colnames(exprs(m))) %>%
+      filter(!is.na(value)) %>%
+      merge(pData(m) %>% select(sample = Sample, bgd_), by = "sample")
+    
+    p_values_t_test[[counter]] <- tryCatch({t.test(value ~ bgd_, data = data_df, 
+                                                   alternative = "two.sided", var.equal = TRUE)[[3]]}, 
+                                           error = function(e) {NA}) 
+    p_values_welch_test[[counter]] <- tryCatch({t.test(value ~ bgd_, data = data_df, 
+                                                   alternative = "two.sided", var.equal = FALSE)[[3]]}, 
+                                           error = function(e) {NA}) 
+    counter = counter + 1
+  }
+  limma_res <- limma_res %>%
+    mutate(t_test_pval = as.numeric(p_values_t_test),
+           t_test_adj = p.adjust(t_test_pval, method = "BH"),
+           welch_pval = as.numeric(p_values_welch_test),
+           welch_adj = p.adjust(welch_pval, method = "BH"))
+  
+  write.table(limma_res %>% select(feature, logFC, limma_pval = P.Value, 
+                                 limma_adj = adj.P.Val, t_test_pval, 
+                                 t_test_adj, welch_pval, welch_adj, contrast), 
+              sep = "\t", quote = F, file = tbl_path, row.names = F)
+}
+
+
+
+```
+
+
+```{r}
+# contrasts <- c(#PEAR1 comparisons
+#                "bgd_PEAR1.C178Y-bgd_PEAR1.WT",
+#                "bgd_PEAR1.C178Y-bgd_MIG.Empty.Vector",
+#                "bgd_PEAR1.R77C-bgd_PEAR1.WT",
+#                "bgd_PEAR1.R77C-bgd_MIG.Empty.Vector",
+#                #NTRK3 comparisons
+#                "bgd_NTRK3.E176D-bgd_NTRK3.WT",
+#                "bgd_NTRK3.E176D-bgd_MIG.Empty.Vector",
+#                "bgd_NTRK3.L449F-bgd_NTRK3.WT",
+#                "bgd_NTRK3.L449F-bgd_MIG.Empty.Vector",
+#                #more NTRK3 comparisons
+#                "bgd_NTRK3.L568V-bgd_NTRK3.WT",
+#                "bgd_NTRK3.L568V-bgd_MIG.Empty.Vector",
+#                "bgd_NTRK3.P792S-bgd_NTRK3.WT",
+#                "bgd_NTRK3.P792S-bgd_MIG.Empty.Vector")
+
+## Updating comparisons 6/02.
+
+contrasts <- c(#PEAR1 comparisons
+               "bgd_PEAR1.C178Y-bgd_PEAR1.WT",
+               "bgd_PEAR1.C178Y-bgd_MIG.Empty.Vector",
+               "bgd_PEAR1.R77C-bgd_PEAR1.WT",
+               "bgd_PEAR1.R77C-bgd_MIG.Empty.Vector",
+               #more NTRK3 comparisons
+               "bgd_NTRK3.L568V-bgd_NTRK3.WT",
+               "bgd_NTRK3.L568V-bgd_pBABE.Empty.Vector",
+               "bgd_NTRK3.P792S-bgd_NTRK3.WT",
+               "bgd_NTRK3.P792S-bgd_pBABE.Empty.Vector")
+
+
+```
+
+
+
+```{r Getting GSEA DB tables, eval=FALSE, include=FALSE}
+t2g_hallmark <- msigdbr(species = "Mus musculus", category = "H") %>%
+  dplyr::select(gs_name, gene_symbol)
+
+# t2g_humanpheno <- msigdbr(species = "Mus musculus", category = "C5", subcategory = "HPO") %>%
+#   dplyr::select(gs_name, gene_symbol) %>%
+#   mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_gobp <- msigdbr(species = "Mus musculus", category = "C5", subcategory = "BP") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+# t2g_gocc <- msigdbr(species = "Mus musculus", category = "C5", subcategory = "CC") %>% 
+#   dplyr::select(gs_name, gene_symbol) %>%
+#   mutate(gs_name = gsub("_", " ", gs_name))
+
+# t2g_gomf <- msigdbr(species = "Mus musculus", category = "C5", subcategory = "MF") %>% 
+#   dplyr::select(gs_name, gene_symbol) %>%
+#   mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_wikipath <- msigdbr(species = "Mus musculus", category = "C2", subcategory = "WIKIPATHWAYS") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+# t2g_pid <- msigdbr(species = "Mus musculus", category = "C2", subcategory = "PID") %>% 
+#   dplyr::select(gs_name, gene_symbol) %>%
+#   mutate(gs_name = gsub("_", " ", gs_name))
+
+t2g_reactome <- msigdbr(species = "Mus musculus", category = "C2", subcategory = "REACTOME") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+# t2g_kegg <- msigdbr(species = "Mus musculus", category = "C2", subcategory = "KEGG") %>% 
+#   dplyr::select(gs_name, gene_symbol) %>%
+#   mutate(gs_name = gsub("_", " ", gs_name))
+
+# t2g_biocarta <- msigdbr(species = "Mus musculus", category = "C2", subcategory = "BIOCARTA") %>% 
+#   dplyr::select(gs_name, gene_symbol) %>%
+#   mutate(gs_name = gsub("_", " ", gs_name))
+
+# t2g_curatedpath <- msigdbr(species = "Mus musculus", category = "C2", subcategory = "CP") %>% 
+#   dplyr::select(gs_name, gene_symbol) %>%
+#   mutate(gs_name = gsub("_", " ", gs_name))
+# 
+# t2g_oncogenic <- msigdbr(species = "Mus musculus", category = "C6") %>%
+#   dplyr::select(gs_name, gene_symbol) %>%
+#   mutate(gs_name = gsub("_", " ", gs_name))
+# 
+# t2g_immunesigdb <- msigdbr(species = "Mus musculus", category = "C7", subcategory = "IMMUNESIGDB") %>%
+#   dplyr::select(gs_name, gene_symbol) %>%
+#   mutate(gs_name = gsub("_", " ", gs_name))
+# 
+# t2g_immune <- msigdbr(species = "Mus musculus", category = "C7", ) %>%
+#   dplyr::select(gs_name, gene_symbol) %>%
+#   mutate(gs_name = gsub("_", " ", gs_name))
+
+```
+
+
+
+```{r Run Diff Exp, eval=FALSE, include=FALSE}
+## Differential expression
+for (contrast in contrasts){
+  diffexp_helper(m_global, contrast, "global_uncorrected_")
+  diffexp_helper(m_global_c, contrast, "global_corrected_")
+
+  diffexp_helper(m_phospho, contrast, "phospho_uncorrected_")
+  diffexp_helper(m_phospho_c, contrast, "phospho_corrected_")
+  
+  diffexp_helper(m_phospho_Y, contrast, "phospho_Y_uncorrected_")
+  diffexp_helper(m_phospho_Y_c, contrast, "phospho_Y_corrected_")
+}
+
+
+```
+
+
+```{r eval=FALSE, include=FALSE}
+prefixes <- c("global_uncorrected", "global_corrected",
+              "phospho_uncorrected", "phospho_corrected",
+              "phospho_Y_uncorrected", "phospho_Y_corrected")
+for (prefix in prefixes){
+  combined <- data.frame()
+  for (tbl_path in list.files(pattern = paste0(prefix,"_diffexp_.*.txt"), path = 'Differential Expression tables/', full.names = T)){
+    this_type <- sub("^.*__(.+).txt$", "\\1", tbl_path)
+    xx <- read.table(tbl_path, sep = "\t", header = T)
+    combined <- rbind(combined, xx)
+  }
+  
+  write.table(combined, paste0("Differential Expression tables/", prefix, "_diffexp_combined.txt"), sep = "\t", quote = F, row.names = F, col.names = T)
+}
+
+source("util/synapseUtil.R")
+
+syn <- synapseLogin()
+
+for (file_path in list.files("Differential Expression tables/", "combined", full.names = T)){
+  synapseStore(file_path, "syn51628536")
+}
+
+
+```
+
+
+```{r}
+plots <- list()
+for (file_path in list.files("Differential Expression tables/", "_combined.txt", full.names = T)){
+  combined <- read.table(file_path, sep = "\t", header = T)
+  for (p_col in c("welch_adj", "t_test_adj", "limma_adj")){
+    plot_df <- combined %>%
+      select(feature, logFC, contrast)
+    plot_df$p_col <- combined[[p_col]]
+    plot_df <- plot_df %>%
+      filter(p_col < 0.05) %>%
+      group_by(contrast) %>%
+      summarize(total_sig = n()) %>%
+      mutate(contrast = sub("-", " - ", contrast)) #%>%
+      #mutate(contrast = sub("MIG.Empty.Vector", "MIG", contrast),)
+    
+    padding_df <- data.frame(contrast = c("NTRK3.L568V - pBABE.Empty.Vector", "NTRK3.L568V - NTRK3.WT", 
+                                          "NTRK3.P792S - pBABE.Empty.Vector", "NTRK3.P792S - NTRK3.WT",
+                                          "PEAR1.C178Y - MIG.Empty.Vector", "PEAR1.C178Y - PEAR1.WT",
+                                          "PEAR1.R77C - MIG.Empty.Vector", "PEAR1.R77C - PEAR1.WT"),
+                             total_sig = 0)
+    
+    padding_df <- padding_df[!(padding_df$contrast %in% plot_df$contrast), ]
+    plot_df <- rbind(plot_df, padding_df)
+    
+    y_max = plot_df$total_sig %>% max()
+    file_path <- sub("Differential Expression tables/", "", file_path) %>% sub("_diffexp_combined.txt", "", .)
+    p <- ggplot(plot_df, aes(x = contrast, y = total_sig)) + 
+      geom_bar(stat = 'identity', fill = "steelblue", width = 0.7, color = "black") + ggtitle(paste(file_path, p_col)) + 
+      theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust = 1)) + 
+      geom_text(aes(label = total_sig), position = position_dodge(width = 0.9), vjust = -0.25) + ylim(0, y_max*1.2)
+    plots <- append(list(p), plots)
+  }
+}
+plots
+
+```
+
+
+
+```{r eval=FALSE, include=FALSE}
+for (file_path in list.files("Differential Expression tables/", "global_.*_diffexp_combined.txt", full.names = T)){
+  print(file_path)
+  combined <- read.table(file_path, sep = "\t", header = T)
+  diffexp <- combined %>%
+    select(feature, logFC, adj_pval = t_test_adj, contrast) %>%
+    filter(!grepl('-NULL$', feature))
+  
+  ora_reactome = ORA_helper(diffexp, universe = unique(diffexp$feature), t2g_reactome) %>%
+    mutate(DB = "Reactome")
+  ora_gobp = ORA_helper(diffexp, universe = unique(diffexp$feature), t2g_gobp) %>%
+    mutate(DB = "GOBP")
+  ora_hallmark = ORA_helper(diffexp, universe = unique(diffexp$feature), t2g_hallmark) %>%
+    mutate(DB = "Hallmark")
+  ora_wikipath = ORA_helper(diffexp, universe = unique(diffexp$feature), t2g_wikipath) %>%
+    mutate(DB = "wikipath")
+  
+  all_res <- rbind(ora_reactome, ora_gobp, ora_hallmark, ora_wikipath)
+  prefix = sub(".*/(.*)_diffexp_combined.txt", "\\1", file_path)
+  table_path = paste0("ORA tables/", prefix, "_ora_combined.txt")
+  write.table(all_res, table_path, sep = "\t")
+}
+
+for (file_path in list.files("Differential Expression tables/", "phospho_.*_diffexp_combined.txt", full.names = T)){
+  print(file_path)
+  combined <- read.table(file_path, sep = "\t", header = T)
+  diffexp <- combined %>%
+    select(feature, logFC, adj_pval = t_test_adj, contrast) %>%
+    filter(!grepl('-NULL$', feature))
+  
+  t2g_ksdb = load_ksdb(organism = "mouse", kind = "PSP May 23 2023", output_as = "ora")
+  ora_ksdb = ORA_helper(diffexp, universe = unique(diffexp$feature), t2g_ksdb) %>%
+    mutate(DB = "KSDB")
+  
+  prefix = sub(".*/(.*)_diffexp_combined.txt", "\\1", file_path)
+  table_path = paste0("ORA tables/", prefix, "_ora_combined.txt")
+  write.table(ora_ksdb, table_path, sep = "\t")
+}
+
+
+```
+
+
+
+```{r eval=FALSE, include=FALSE}
+msnsets <- list(m_global, m_global_c, m_phospho, m_phospho_c, m_phospho_Y, m_phospho_Y_c)
+names(msnsets) <- c("global_uncorrected", "global_corrected",
+                    "phospho_uncorrected", "phospho_corrected",
+                    "phospho_Y_uncorrected", "phospho_Y_corrected")
+for (dataset in names(msnsets)[1:2]){
+  m = msnsets[[dataset]]
+  GSEA_helper(m, contrasts, t2g_reactome, paste0(dataset, "_reactome"), "bgd_")
+  GSEA_helper(m, contrasts, t2g_gobp, paste0(dataset, "_gobp"), "bgd_")
+  GSEA_helper(m, contrasts, t2g_hallmark, paste0(dataset, "_hallmark"), "bgd_")
+  GSEA_helper(m, contrasts, t2g_wikipath, paste0(dataset, "_wikipath"), "bgd_")
+}
+
+```
+
+
+
+
+
+```{r}
+msnsets <- list(m_global, m_global_c, m_phospho, m_phospho_c, m_phospho_Y, m_phospho_Y_c)
+names(msnsets) <- c("global_uncorrected", "global_corrected",
+                    "phospho_uncorrected", "phospho_corrected",
+                    "phospho_Y_uncorrected", "phospho_Y_corrected")
+for (dataset in names(msnsets)[3:6]){
+  m = msnsets[[dataset]]
+  KSEA_helper(m, contrasts, "bgd_", dataset, organism = "mouse", kind = "PSP May 23 2023")
+}
+
+```
+
+
+
+
+
+
+
+

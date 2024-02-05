@@ -1,0 +1,644 @@
+
+
+
+
+
+
+```{r include=FALSE}
+library(MSnSet.utils)
+library(clusterProfiler)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(pheatmap)
+library(msigdbr)
+library(stringr)
+library(ggrepel)
+
+source("../camilo_helper/helper_scripts.R")
+source("util/synapseUtil.R")
+
+global_crosstab <- read.table("data/global_data/ptrc_ex19_crosstab_global_gene_median_centered.txt", sep = "\t")
+phospho_crosstab <- read.table("data/phospho_data/ptrc_ex19_crosstab_phospho_SiteID_median_centered.txt", sep = "\t")
+phospho_crosstab_Y <- read.table("data/phospho_data_tyrosine/ptrc_ex19_tyrosene_4925_crosstab_tyrisine_4925_phospho_SiteID_median_centered.txt", sep="\t")
+global_crosstab_c <- read.table("data/global_data/ptrc_ex19_crosstab_global_gene_median_centered_corrected.txt", sep = "\t")
+phospho_crosstab_c <- read.table("data/phospho_data/ptrc_ex19_crosstab_phospho_SiteID_median_centered_corrected.txt", sep = "\t")
+phospho_crosstab_Y_c <- read.table("data/phospho_data_tyrosine/ptrc_ex19_crosstab_phospho_Y_SiteID_median_centered_corrected.txt", sep = "\t")
+
+t2g_hallmark <- msigdbr(species = "Mus musculus", category = "H") %>%
+  dplyr::select(gs_name, gene_symbol) 
+
+t2g_gobp <- msigdbr(species = "Mus musculus", category = "C5", subcategory = "BP") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name))
+
+global_crosstab <- global_crosstab[rownames(global_crosstab_c), ]
+phospho_crosstab <- phospho_crosstab[rownames(phospho_crosstab_c), ]
+
+meta <- read.table("data/samples.txt", sep = "\t", header = T) %>%
+  select(Sample = MeasurementName, PlexID) %>% filter(!is.na(Sample)) %>%
+  mutate(Sample = sub("/", " ", Sample),
+         PlexID = as.character(PlexID)) %>%
+  mutate(Sample = gsub(" ", "\\.", Sample),
+         bio_group_detailed = sub("Ba\\.F3\\.(.*)\\.Rep\\.[1-9]+$", "\\1", Sample),
+         bio_group = sub('^([A-Za-z1-9]+)\\..+$', "\\1", bio_group_detailed),
+         bgd_ = bio_group_detailed,
+         Group = bgd_)
+rownames(meta) <- meta$Sample
+
+m_global <- MSnSet(exprs = global_crosstab %>% as.matrix(), 
+                   pData = meta[colnames(global_crosstab), ])
+
+m_phospho <- MSnSet(exprs = phospho_crosstab %>% as.matrix(), 
+                    pData = meta[colnames(phospho_crosstab), ])
+
+m_phospho_Y <- MSnSet(exprs = phospho_crosstab_Y %>% as.matrix(), 
+                      pData = meta[colnames(phospho_crosstab_Y), ])
+
+m_global_c <- MSnSet(exprs = global_crosstab_c %>% as.matrix(), 
+                     pData = meta[colnames(global_crosstab_c), ])
+
+m_phospho_c <- MSnSet(exprs = phospho_crosstab_c %>% as.matrix(), 
+                      pData = meta[colnames(phospho_crosstab_c), ])
+
+m_phospho_Y_c <- MSnSet(exprs = phospho_crosstab_Y_c %>% as.matrix(), 
+                        pData = meta[colnames(phospho_crosstab_Y_c), ])
+
+syn <- synapseLogin()
+
+```
+
+
+```{r}
+plot_pca(m_global_c[, m_global_c$bgd_ %in% c("NTRK3.P792S", "NTRK3.L568V", 
+                                             "NTRK3.WT", "Parental")], 
+         phenotype = "Group", label = "bgd_", label_size = 2.5, max.overlaps = 10) + 
+  scale_color_manual(values = c("#F8766D", "#C49A00","#53B400","#A58AFF",
+                                "#00B6EB","#00C094","#FB61D7")) + ggtitle("Global NTRK3 PCA")
+ggsave("global_pca_corrected_chosen_groups.pdf")
+
+
+plot_pca(m_phospho_c[, m_phospho_c$bgd_ %in% c("NTRK3.P792S", "NTRK3.L568V", 
+                                             "NTRK3.WT", "Parental")], 
+         phenotype = "Group", label = "bgd_", label_size = 2.5, max.overlaps = 10) + 
+  scale_color_manual(values = c("#F8766D", "#C49A00","#53B400","#A58AFF",
+                                "#00B6EB","#00C094","#FB61D7")) + ggtitle("Phospho NTRK3 PCA")
+ggsave("phospho_pca_corrected_chosen_groups.pdf")
+
+plot_pca(m_phospho_Y_c[, m_phospho_Y_c$bgd_ %in% c("NTRK3.P792S", "NTRK3.L568V", 
+                                             "NTRK3.WT", "Parental")], 
+         phenotype = "Group", label = "bgd_", label_size = 2.5, max.overlaps = 10) + 
+  scale_color_manual(values = c("#F8766D", "#C49A00","#53B400","#A58AFF",
+                                "#00B6EB","#00C094","#FB61D7")) + ggtitle("Phospho Y NTRK3 PCA")
+ggsave("phospho_Y_pca_corrected_chosen_groups.pdf")
+
+
+plot_pca(m_global_c[, m_global_c$bgd_ %in% c("NTRK3.P792S", "NTRK3.L568V", 
+                                             "NTRK3.WT", "Parental", "pBABE.Empty.Vector")], 
+         phenotype = "Group", label = "bgd_", label_size = 2.5, max.overlaps = 10) + 
+  scale_color_manual(values = c("#F8766D", "#C49A00","#53B400","#A58AFF",
+                                "#00B6EB","#00C094","#FB61D7")) + ggtitle("Global NTRK3 PCA")
+ggsave("global_pca_corrected_chosen_groups_and_pbabe.pdf")
+
+
+plot_pca(m_phospho_c[, m_phospho_c$bgd_ %in% c("NTRK3.P792S", "NTRK3.L568V", 
+                                             "NTRK3.WT", "Parental", "pBABE.Empty.Vector")], 
+         phenotype = "Group", label = "bgd_", label_size = 2.5, max.overlaps = 10) + 
+  scale_color_manual(values = c("#F8766D", "#C49A00","#53B400","#A58AFF",
+                                "#00B6EB","#00C094","#FB61D7")) + ggtitle("Phospho NTRK3 PCA")
+ggsave("phospho_pca_corrected_chosen_groups_and_pbabe.pdf")
+
+plot_pca(m_phospho_Y_c[, m_phospho_Y_c$bgd_ %in% c("NTRK3.P792S", "NTRK3.L568V", 
+                                             "NTRK3.WT", "Parental", "pBABE.Empty.Vector")], 
+         phenotype = "Group", label = "bgd_", label_size = 2.5, max.overlaps = 10) + 
+  scale_color_manual(values = c("#F8766D", "#C49A00","#53B400","#A58AFF",
+                                "#00B6EB","#00C094","#FB61D7")) + ggtitle("Phospho Y NTRK3 PCA")
+ggsave("phospho_Y_pca_corrected_chosen_groups_and_pbabe.pdf")
+
+source("util/synapseUtil.R")
+
+synapseLogin()
+# synapseStore("global_pca_corrected_NTRK3_groups_labeled.pdf", parentId = "syn51628500")
+# synapseStore("global_pca_corrected_NTRK3_groups.pdf", parentId = "syn51628500")
+# synapseStore("phospho_pca_corrected_NTRK3_groups_labeled.pdf", parentId = "syn51628500")
+# synapseStore("phospho_pca_corrected_NTRK3_groups.pdf", parentId = "syn51628500")
+# synapseStore("phospho_Y_pca_corrected_NTRK3_groups_labeled.pdf", parentId = "syn51628500")
+# synapseStore("phospho_Y_pca_corrected_NTRK3_groups.pdf", parentId = "syn51628500")
+
+```
+
+
+```{r}
+diffexp_global_corrected <- read.table(syn$get("syn51628538")$path, header = T)
+
+diffexp_phospho_corrected <- read.table(syn$get("syn51628541")$path, header = T)
+
+diffexp_phospho_Y_corrected <- read.table(syn$get("syn52066353")$path, header = T)
+
+all_ora_res <- read.table(syn$get("syn51658434")$path, sep = "\t", header = T)
+
+gsea_gobp <- read.table(syn$get("syn51628598")$path, sep = "\t", header = T)
+
+gsea_hallmark <- read.table(syn$get("syn51628599")$path, sep = "\t", header = T)
+
+ksea_res <- read.table(syn$get("syn52120007")$path, sep = "\t", header = T)
+
+ksea_Y_res <- read.table(syn$get("syn52120009")$path, sep = "\t", header = T)
+```
+
+
+
+```{r}
+intersect_terms <- function(term1, term2, t2g){
+  terms = c(term1, term2)
+  common <- t2g$gene_symbol %>% unique()
+  for (term in terms){
+    genes <- t2g %>%
+      filter(gs_name == term) %>%
+      pull(gene_symbol) %>%
+      unique()
+    common <- intersect(common, genes)
+  }
+  return(length(common))
+}
+
+sig_genes_568 <- diffexp_global_corrected %>%
+  filter(contrast == "NTRK3.P792S-NTRK3.WT", t_test_adj < 0.05) %>% pull(feature)
+
+t2g_hallmark_568 <- msigdbr(species = "Mus musculus", category = "H") %>%
+  dplyr::select(gs_name, gene_symbol) %>%
+  filter(gene_symbol %in% sig_genes_568)
+
+t2g_gobp_568 <- msigdbr(species = "Mus musculus", category = "C5", subcategory = "BP") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name)) %>%
+  filter(gene_symbol %in% sig_genes_568)
+
+sig_terms <- all_ora_res %>% filter(DB == "Hallmark",
+                                    p.adjust < 0.05,
+                                    contrast == "NTRK3.L568V - NTRK3.WT",
+                                    dataset == "global_corrected")
+
+# HALLMARK_OXIDATIVE_PHOSPHORYLATION
+sig_terms$choice_2 <- sapply(sig_terms$ID, intersect_terms, "HALLMARK_OXIDATIVE_PHOSPHORYLATION", t2g_hallmark_568)
+# HALLMARK_E2F_TARGETS
+sig_terms$choice_3 <- sapply(sig_terms$ID, intersect_terms, "HALLMARK_E2F_TARGETS", t2g_hallmark_568)
+# HALLMARK_FATTY_ACID_METABOLISM
+
+sig_genes_792 <- diffexp_global_corrected %>%
+  filter(contrast == "NTRK3.P792S-NTRK3.WT", t_test_adj < 0.05) %>% pull(feature)
+
+t2g_hallmark_792 <- msigdbr(species = "Mus musculus", category = "H") %>%
+  dplyr::select(gs_name, gene_symbol) %>%
+  filter(gene_symbol %in% sig_genes_792)
+
+t2g_gobp_792 <- msigdbr(species = "Mus musculus", category = "C5", subcategory = "BP") %>% 
+  dplyr::select(gs_name, gene_symbol) %>%
+  mutate(gs_name = gsub("_", " ", gs_name)) %>%
+  filter(gene_symbol %in% sig_genes_792)
+
+sig_terms <- all_ora_res %>% filter(DB == "Hallmark",
+                                    p.adjust < 0.05,
+                                    contrast == "NTRK3.P792S - NTRK3.WT",
+                                    dataset == "global_corrected")
+
+# HALLMARK_E2F_TARGETS
+sig_terms$choice_2 <- sapply(sig_terms$ID, intersect_terms, "HALLMARK_E2F_TARGETS", t2g_hallmark_792)
+# HALLMARK_MITOTIC_SPINDLE
+sig_terms$choice_3 <- sapply(sig_terms$ID, intersect_terms, "HALLMARK_MITOTIC_SPINDLE", t2g_hallmark_792)
+# HALLMARK_OXIDATIVE_PHOSPHORYLATION
+sig_terms$choice_4 <- sapply(sig_terms$ID, intersect_terms, "HALLMARK_OXIDATIVE_PHOSPHORYLATION", t2g_hallmark_792)
+
+sig_terms <- all_ora_res %>% filter(DB == "GOBP",
+                                    p.adjust < 0.05,
+                                    contrast == "NTRK3.L568V - NTRK3.WT",
+                                    dataset == "global_corrected")
+
+# GOBP ORGANIC ACID METABOLIC PROCESS
+sig_terms$choice_2 <- sapply(sig_terms$ID, intersect_terms, "GOBP ORGANIC ACID METABOLIC PROCESS", t2g_gobp_568)
+# GOBP NADH DEHYDROGENASE COMPLEX ASSEMBLY
+sig_terms$choice_3 <- sapply(sig_terms$ID, intersect_terms, "GOBP NADH DEHYDROGENASE COMPLEX ASSEMBLY", t2g_gobp_568)
+# GOBP ENZYME LINKED RECEPTOR PROTEIN SIGNALING PATHWAY
+sig_terms$choice_4 <- sapply(sig_terms$ID, intersect_terms, "GOBP ENZYME LINKED RECEPTOR PROTEIN SIGNALING PATHWAY", t2g_gobp_568)
+# GOBP MITOCHONDRIAL TRANSPORT
+sig_terms$choice_5 <- sapply(sig_terms$ID, intersect_terms, "GOBP MITOCHONDRIAL TRANSPORT", t2g_gobp_568)
+# Maybe GOBP CELL DIVISION
+
+
+
+## NTRK3.P792S - NTRK3.WT
+
+ 
+
+sig_terms <- all_ora_res %>% filter(DB == "Hallmark",
+                                    p.adjust < 0.05,
+                                    contrast == "NTRK3.P792S - NTRK3.WT",
+                                    dataset == "global_corrected")
+
+# HALLMARK_G2M_CHECKPOINT
+# HALLMARK_FATTY_ACID_METABOLISM
+# HALLMARK_ADIPOGENESIS
+# Maybe HALLMARK_UV_RESPONSE_DN
+intersect_terms("HALLMARK_UV_RESPONSE_DN", "HALLMARK_G2M_CHECKPOINT", t2g_hallmark)
+
+sig_terms <- all_ora_res %>% filter(DB == "GOBP",
+                                    p.adjust < 0.05,
+                                    contrast == "NTRK3.P792S - NTRK3.WT",
+                                    dataset == "global_corrected")
+
+# GOBP ORGANIC ACID METABOLIC PROCESS
+sig_terms$choice_2 <- sapply(sig_terms$ID, intersect_terms, "GOBP ORGANIC ACID METABOLIC PROCESS", t2g_gobp_792)
+# GOBP GOBP CELL DIVISION
+sig_terms$choice_3 <- sapply(sig_terms$ID, intersect_terms, "GOBP CELL DIVISION", t2g_gobp_792)
+# GOBP CYTOPLASMIC TRANSLATION
+sig_terms$choice_4 <- sapply(sig_terms$ID, intersect_terms, "GOBP CYTOPLASMIC TRANSLATION", t2g_gobp_792)
+# GOBP OLIGOSACCHARIDE METABOLIC PROCESS
+sig_terms$choice_5 <- sapply(sig_terms$ID, intersect_terms, "GOBP OLIGOSACCHARIDE METABOLIC PROCESS", t2g_gobp_792)
+# GOBP ALCOHOL CATABOLIC PROCESS
+sig_terms$choice_6 <- sapply(sig_terms$ID, intersect_terms, "GOBP ALCOHOL CATABOLIC PROCESS", t2g_gobp)
+# GOBP REGULATION OF EPITHELIAL CELL DIFFERENTIATION
+
+```
+
+
+```{r}
+chosen_terms_792 <- c("GOBP ORGANIC ACID METABOLIC PROCESS", "GOBP CELL DIVISION", "GOBP CYTOPLASMIC TRANSLATION",  
+                      "GOBP ALCOHOL CATABOLIC PROCESS", "GOBP OLIGOSACCHARIDE METABOLIC PROCESS")
+
+chosen_terms_568 <- c("GOBP ORGANIC ACID METABOLIC PROCESS", "GOBP NADH DEHYDROGENASE COMPLEX ASSEMBLY", 
+                      "GOBP ESTABLISHMENT OF CELL POLARITY", "GOBP MITOCHONDRIAL TRANSPORT")
+
+## GOBP 
+options(ggrepel.max.overlaps = Inf)
+diffexp_res_792 <- diffexp_global_corrected %>%
+  filter(contrast == "NTRK3.P792S-NTRK3.WT")
+
+diffexp_res_568 <- diffexp_global_corrected %>%
+  filter(contrast == "NTRK3.L568V-NTRK3.WT")
+
+L568V_diffexp_annotations <- diffexp_res_568 %>%
+  filter(t_test_adj < 0.05) %>%
+  merge(t2g_gobp %>% filter(gs_name %in% chosen_terms_568) %>% select(Pathway = gs_name, feature = gene_symbol), by = "feature")
+
+P792S_diffexp_annotations <- diffexp_res_792 %>%
+  filter(t_test_adj < 0.05) %>%
+  merge(t2g_gobp %>% filter(gs_name %in% chosen_terms_792) %>% select(Pathway = gs_name, feature = gene_symbol), by = "feature")
+
+
+p <- volcano_function(diffexp_res_568, chosen_terms_568, t2g_gobp, label_genes = c("Ripor2", "Rap2a", "Ndel1", 
+                                                                              "Pitrm1", "Pmpca", "Slc25a4",
+                                                                              "Akt2", "Dok2", "Pml",
+                                                                              "Dmac2", "Ndufaf5", "Ndufaf13"))[[1]] + 
+  ggtitle("NTRK3.L568V-NTRK3.WT")
+
+ggsave(plot = p, filename = "volcano_plots_L568V_WT_gobp.pdf", width = 11)
+yy = volcano_function(diffexp_res_568, chosen_terms_568, t2g_gobp, label_genes = c(""))[[2]]
+
+p <- volcano_function(diffexp_res_792, chosen_terms_792, t2g_gobp, label_genes = c("Idh3a", "Pdk3", "Pck2",
+                                                                                   "Ccdc124", "Cit", "Bora",
+                                                                                   "Gk5", "Gk", "Gdp2",
+                                                                                   "Manba", "Man2c1", "Ctbs",
+                                                                                   "Eif4a1", "Eif3a"))[[1]] + 
+  ggtitle("NTRK3.P792S-NTRK3.WT")
+
+ggsave(plot = p, filename = "volcano_plots_P792S_WT_gobp.pdf", width = 11)
+yy = volcano_function(diffexp_res_792, chosen_terms_792, t2g_gobp, label_genes = c(""))[[2]]
+```
+
+
+
+
+
+```{r}
+library(openxlsx)
+OUT <- createWorkbook()
+
+addWorksheet(OUT, "ORGANIC ACID METABOLIC PROCESS")
+worksheet <- L568V_diffexp_annotations %>% filter(Pathway == "GOBP ORGANIC ACID METABOLIC PROCESS") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "ORGANIC ACID METABOLIC PROCESS", x = worksheet)  
+
+
+addWorksheet(OUT, "NADH DEHYDROGENASE COMP")
+worksheet <- L568V_diffexp_annotations %>% filter(Pathway == "GOBP NADH DEHYDROGENASE COMPLEX ASSEMBLY") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "NADH DEHYDROGENASE COMP", x = worksheet)  
+
+
+addWorksheet(OUT, "ESTABLISHMENT OF CELL POLARITY")
+worksheet <- L568V_diffexp_annotations %>% filter(Pathway == "GOBP ESTABLISHMENT OF CELL POLARITY") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "ESTABLISHMENT OF CELL POLARITY", x = worksheet)  
+
+
+addWorksheet(OUT, "MITOCHONDRIAL TRANSPORT")
+worksheet <- L568V_diffexp_annotations %>% filter(Pathway == "GOBP MITOCHONDRIAL TRANSPORT") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "MITOCHONDRIAL TRANSPORT", x = worksheet)  
+
+
+
+saveWorkbook(OUT, "volcano_plots_gobp_pathway_members_L568V.xlsx")
+
+
+
+
+
+
+OUT <- createWorkbook()
+
+addWorksheet(OUT, "ORGANIC ACID METABOLIC PROCESS")
+worksheet <- P792S_diffexp_annotations %>% filter(Pathway == "GOBP ORGANIC ACID METABOLIC PROCESS") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "ORGANIC ACID METABOLIC PROCESS", x = worksheet)  
+
+
+addWorksheet(OUT, "CELL DIVISION")
+worksheet <- P792S_diffexp_annotations %>% filter(Pathway == "GOBP CELL DIVISION") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "CELL DIVISION", x = worksheet)  
+
+
+addWorksheet(OUT, "CYTOPLASMIC TRANSLATION")
+worksheet <- P792S_diffexp_annotations %>% filter(Pathway == "GOBP CYTOPLASMIC TRANSLATION") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "CYTOPLASMIC TRANSLATION", x = worksheet)  
+
+
+addWorksheet(OUT, "ALCOHOL CATABOLIC PROCESS")
+worksheet <- P792S_diffexp_annotations %>% filter(Pathway == "GOBP ALCOHOL CATABOLIC PROCESS") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "ALCOHOL CATABOLIC PROCESS", x = worksheet)  
+
+
+
+addWorksheet(OUT, "OLIGOSACCHARIDE METABOLIC PRO")
+worksheet <- P792S_diffexp_annotations %>% filter(Pathway == "GOBP OLIGOSACCHARIDE METABOLIC PROCESS") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "OLIGOSACCHARIDE METABOLIC PRO", x = worksheet)  
+
+
+
+saveWorkbook(OUT, "volcano_plots_gobp_pathway_members_P792S.xlsx")
+
+
+```
+
+
+
+
+
+
+
+```{r}
+# HALLMARK_OXIDATIVE_PHOSPHORYLATION
+# HALLMARK_E2F_TARGETS
+# HALLMARK_FATTY_ACID_METABOLISM
+
+chosen_terms_568 <- c("HALLMARK_OXIDATIVE_PHOSPHORYLATION", "HALLMARK_E2F_TARGETS", "HALLMARK_FATTY_ACID_METABOLISM")
+# HALLMARK_E2F_TARGETS
+# HALLMARK_MITOTIC_SPINDLE
+# HALLMARK_OXIDATIVE_PHOSPHORYLATION
+chosen_terms_792 <- c("HALLMARK_E2F_TARGETS", "HALLMARK_MITOTIC_SPINDLE", 
+                      "HALLMARK_OXIDATIVE_PHOSPHORYLATION")
+
+## Hallmark 
+options(ggrepel.max.overlaps = Inf)
+diffexp_res_792 <- diffexp_global_corrected %>%
+  filter(contrast == "NTRK3.P792S-NTRK3.WT")
+
+diffexp_res_568 <- diffexp_global_corrected %>%
+  filter(contrast == "NTRK3.L568V-NTRK3.WT")
+
+L568V_diffexp_annotations <- diffexp_res_568 %>%
+  filter(t_test_adj < 0.05) %>%
+  merge(t2g_hallmark %>% filter(gs_name %in% chosen_terms_568) %>% select(Pathway = gs_name, feature = gene_symbol), by = "feature")
+
+p <- volcano_function(diffexp_res_568, chosen_terms_568, t2g_hallmark, label_genes = c("Cox15", "Slc25a20", "Sdhb", 
+                                                                              "Myc", "Cdk4", "Cdk1",
+                                                                              "Gapdhs", "Me1", "Idi1"))[[1]] + 
+  ggtitle("NTRK3.L568V-NTRK3.WT")
+
+ggsave(plot = p, filename = "volcano_plots_L568V_WT_hallmark.pdf", width = 11)
+yy = volcano_function(diffexp_res_568, chosen_terms_568, t2g_hallmark, label_genes = c(""))[[2]]
+
+
+gg_color_hue <- function(n) {
+    hues = seq(15, 375, length = n + 1)
+    hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+gg_color_hue(3)
+
+P792S_diffexp_annotations <- diffexp_res_792 %>%
+  filter(t_test_adj < 0.05) %>%
+  merge(t2g_hallmark %>% filter(gs_name %in% chosen_terms_792) %>% select(Pathway = gs_name, feature = gene_symbol), by = "feature")
+
+p <- volcano_function(diffexp_res_792, chosen_terms_792, t2g_hallmark, label_genes = c("Cox15", "Acadm", "Idh1", 
+                                                                              "Chek1", "Cdk4", "Cks1b",
+                                                                              "Top2a", "Kif20b", "Cenpe"))[[1]] + 
+  ggtitle("NTRK3.P792S-NTRK3.WT") + scale_color_manual(values = c("HALLMARK_OXIDATIVE_PHOSPHORYLATION" = "#F8766D",
+                                                                  "HALLMARK_MITOTIC_SPINDLE" = "#00BA38",
+                                                                  "HALLMARK_E2F_TARGETS" = "#619CFF"))
+
+ggsave(plot = p, filename = "volcano_plots_P792S_WT_hallmark.pdf", width = 11)
+yy = volcano_function(diffexp_res_792, chosen_terms_792, t2g_hallmark, label_genes = c(""))[[2]]
+```
+
+
+```{r}
+library(openxlsx)
+OUT <- createWorkbook()
+
+addWorksheet(OUT, "OXIDATIVE PHOSPHORYLATION")
+worksheet <- L568V_diffexp_annotations %>% filter(Pathway == "HALLMARK_OXIDATIVE_PHOSPHORYLATION") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "OXIDATIVE PHOSPHORYLATION", x = worksheet)  
+
+
+addWorksheet(OUT, "FATTY ACID METABOLISM")
+worksheet <- L568V_diffexp_annotations %>% filter(Pathway == "HALLMARK_FATTY_ACID_METABOLISM") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "FATTY ACID METABOLISM", x = worksheet)  
+
+
+addWorksheet(OUT, "E2F TARGETS")
+worksheet <- L568V_diffexp_annotations %>% filter(Pathway == "HALLMARK_E2F_TARGETS") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "E2F TARGETS", x = worksheet)  
+
+
+
+saveWorkbook(OUT, "volcano_plots_pathway_members_L568V.xlsx")
+
+
+
+
+library(openxlsx)
+OUT <- createWorkbook()
+
+addWorksheet(OUT, "OXIDATIVE PHOSPHORYLATION")
+worksheet <- P792S_diffexp_annotations %>% filter(Pathway == "HALLMARK_OXIDATIVE_PHOSPHORYLATION") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "OXIDATIVE PHOSPHORYLATION", x = worksheet)  
+
+
+addWorksheet(OUT, "MITOTIC SPINDLE")
+worksheet <- P792S_diffexp_annotations %>% filter(Pathway == "HALLMARK_MITOTIC_SPINDLE") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "MITOTIC SPINDLE", x = worksheet)  
+
+
+addWorksheet(OUT, "E2F TARGETS")
+worksheet <- P792S_diffexp_annotations %>% filter(Pathway == "HALLMARK_E2F_TARGETS") %>%
+  select(Pathway, feature, logFC, t_test_adj)
+writeData(OUT, sheet = "E2F TARGETS", x = worksheet)  
+
+
+
+saveWorkbook(OUT, "volcano_plots_pathway_members_P792S.xlsx")
+
+
+```
+
+
+
+```{r}
+plot_features(m_global_c[ ,m_global_c$bgd_ %in% c("NTRK3.P792S", "NTRK3.L568V", "NTRK3.WT", "Parental")], 
+              features = c("E2f2", "E2f3", "E2f4", "E2f5", "E2f6", "E2f7", "E2f8"), color_by = "bgd_")
+
+ggsave("E2F_genes_global_corrected.pdf")
+
+```
+
+
+```{r}
+phospho_ksea_corrected <- read.table(syn$get("syn52120007")$path, header = T)
+
+plot_df <- phospho_ksea_corrected %>%
+  filter(contrast == "bgd_NTRK3.L568V-bgd_NTRK3.WT") %>%
+  top_n(18, -adj_p_val) %>%
+  arrange(-enrichment) %>%
+  mutate(pathway = factor(pathway, levels = pathway),
+         color = case_when(adj_p_val < .05 ~ "sig",
+                           TRUE ~ "not sig"))
+
+p <- ggplot(plot_df, aes(x = pathway, y = enrichment, fill = color)) + geom_bar(width = 0.7, stat = 'identity') + 
+  scale_fill_manual(values = c("sig" = "#F93F40", "not sig" = "grey39")) + ylab("Activity") + ggtitle("NTRK3.L568V - NTRK3.WT") +
+  theme(axis.text.x = element_text(angle = 90, size = 10.5, hjust = 1, vjust = 0.3), legend.position = "none")
+
+ggsave("L568V_WT_ksea_plot.pdf", width = 11, height = 6)
+
+
+plot_df <- phospho_ksea_corrected %>%
+  filter(contrast == "bgd_NTRK3.P792S-bgd_NTRK3.WT") %>%
+  top_n(18, -adj_p_val) %>%
+  arrange(-enrichment) %>%
+  mutate(pathway = factor(pathway, levels = pathway),
+         color = case_when(adj_p_val < .05 ~ "sig",
+                           TRUE ~ "not sig"))
+
+p <- ggplot(plot_df, aes(x = pathway, y = enrichment, fill = color)) + geom_bar(width = 0.7, stat = 'identity') + 
+  scale_fill_manual(values = c("sig" = "#F93F40", "not sig" = "grey39")) + ylab("Activity") + ggtitle("NTRK3.P792S - NTRK3.WT") +
+  theme(axis.text.x = element_text(angle = 90, size = 10.5, hjust = 1, vjust = 0.3), legend.position = "none")
+
+ggsave("P792S_WT_ksea_plot.pdf", width = 11, height = 6)
+```
+
+
+supplemental table
+
+```{r}
+library(openxlsx)
+diffexp_global_corrected <- read.table(syn$get("syn51628538")$path, header = T)
+
+diffexp_phospho_corrected <- read.table(syn$get("syn51628541")$path, header = T)
+
+diffexp_phospho_Y_corrected <- read.table(syn$get("syn52066353")$path, header = T)
+
+all_ora_res <- read.table(syn$get("syn51658434")$path, sep = "\t", header = T)
+
+gsea_gobp <- read.table(syn$get("syn51628598")$path, sep = "\t", header = T)
+
+gsea_hallmark <- read.table(syn$get("syn51628599")$path, sep = "\t", header = T)
+
+ksea_res <- read.table(syn$get("syn52120007")$path, sep = "\t", header = T)
+
+ksea_Y_res <- read.table(syn$get("syn52120009")$path, sep = "\t", header = T)
+
+
+OUT <- createWorkbook()
+
+addWorksheet(OUT, "Global crosstab")
+worksheet <- global_crosstab_c %>% tibble::rownames_to_column("feature") %>% select(feature, everything())
+writeData(OUT, sheet = "Global crosstab", x = worksheet)
+
+
+addWorksheet(OUT, "Phospho crosstab")
+worksheet <- phospho_crosstab_c %>% tibble::rownames_to_column("feature") %>% select(feature, everything())
+writeData(OUT, sheet = "Phospho crosstab", x = worksheet)
+
+
+addWorksheet(OUT, "Phospho Y crosstab")
+worksheet <- phospho_crosstab_Y_c %>% tibble::rownames_to_column("feature") %>% select(feature, everything())
+writeData(OUT, sheet = "Phospho Y crosstab", x = worksheet)
+
+
+addWorksheet(OUT, "Global differential expression")
+chosen_contrasts <- c("NTRK3.L568V-NTRK3.WT", "NTRK3.L568V-pBABE.Empty.Vector", "NTRK3.P792S-NTRK3.WT", "NTRK3.P792S-pBABE.Empty.Vector")
+worksheet <- diffexp_global_corrected %>% filter(contrast %in% chosen_contrasts) %>% select(feature, logFC, t_test_pval, t_test_adj, contrast)
+writeData(OUT, sheet = "Global differential expression", x = worksheet)
+
+
+addWorksheet(OUT, "Phospho differential expression")
+chosen_contrasts <- c("NTRK3.L568V-NTRK3.WT", "NTRK3.L568V-pBABE.Empty.Vector", "NTRK3.P792S-NTRK3.WT", "NTRK3.P792S-pBABE.Empty.Vector")
+worksheet <- diffexp_phospho_corrected %>% filter(contrast %in% chosen_contrasts) %>% select(feature, logFC, t_test_pval, t_test_adj, contrast)
+writeData(OUT, sheet = "Phospho differential expression", x = worksheet)
+
+
+addWorksheet(OUT, "Phospho Y diffexp")
+chosen_contrasts <- c("NTRK3.L568V-NTRK3.WT", "NTRK3.L568V-pBABE.Empty.Vector", "NTRK3.P792S-NTRK3.WT", "NTRK3.P792S-pBABE.Empty.Vector")
+worksheet <- diffexp_phospho_Y_corrected %>% filter(contrast %in% chosen_contrasts) %>% select(feature, logFC, limma_pval, limma_adj, contrast)
+writeData(OUT, sheet = "Phospho Y diffexp", x = worksheet)
+
+
+addWorksheet(OUT, "Enrichment of diffexp (Global)")
+chosen_contrasts <- c("NTRK3.L568V - NTRK3.WT", "NTRK3.L568V - pBABE.Empty.Vector", "NTRK3.P792S - NTRK3.WT", "NTRK3.P792S - pBABE.Empty.Vector")
+worksheet <- all_ora_res %>% filter(contrast %in% chosen_contrasts, DB %in% c("GOBP", "Hallmark")) %>% select(pathway = ID, Database = DB, 
+                                                                               GeneRatio, BgRatio, pvalue, p.adjust, geneID, contrast, sign)
+writeData(OUT, sheet = "Enrichment of diffexp (Global)", x = worksheet)
+
+
+addWorksheet(OUT, "GSEA (all global features)")
+chosen_contrasts <- c("NTRK3.L568V-NTRK3.WT", "NTRK3.L568V-pBABE.Empty.Vector", "NTRK3.P792S-NTRK3.WT", "NTRK3.P792S-pBABE.Empty.Vector")
+worksheet1 <- gsea_gobp %>% mutate(contrast = gsub("bgd_", "", contrast)) %>% 
+  filter(contrast %in% chosen_contrasts) %>% mutate(DB = "GOBP") %>% 
+  select(pathway = Description, Database = DB, setSize, NES, pvalue, p.adjust, core_enrichment, contrast)
+worksheet2 <- gsea_hallmark %>% mutate(contrast = gsub("bgd_", "", contrast)) %>% 
+  filter(contrast %in% chosen_contrasts) %>% mutate(DB = "Hallmark") %>% 
+  select(pathway = Description, Database = DB, setSize, NES, pvalue, p.adjust, core_enrichment, contrast)
+
+worksheet <- rbind(worksheet1, worksheet2)
+writeData(OUT, sheet = "GSEA (all global features)", x = worksheet)
+
+
+addWorksheet(OUT, "KSEA (all phospho features)")
+chosen_contrasts <- c("NTRK3.L568V-NTRK3.WT", "NTRK3.L568V-pBABE.Empty.Vector", "NTRK3.P792S-NTRK3.WT", "NTRK3.P792S-pBABE.Empty.Vector")
+worksheet <- ksea_res %>% mutate(contrast = gsub("bgd_", "", contrast)) %>% 
+  filter(contrast %in% chosen_contrasts) %>% mutate(DB = "PhosphoSitePlus") %>% 
+  select(pathway, Database = DB, set_size, enrichment, adj_p_val, contrast)
+writeData(OUT, sheet = "KSEA (all phospho features)", x = worksheet)
+
+
+addWorksheet(OUT, "KSEA (all phospho Y features)")
+chosen_contrasts <- c("NTRK3.L568V-NTRK3.WT", "NTRK3.L568V-pBABE.Empty.Vector", "NTRK3.P792S-NTRK3.WT", "NTRK3.P792S-pBABE.Empty.Vector")
+worksheet <- ksea_Y_res %>% mutate(contrast = gsub("bgd_", "", contrast)) %>% 
+  filter(contrast %in% chosen_contrasts) %>% mutate(DB = "PhosphoSitePlus") %>% 
+  select(pathway, Database = DB, set_size, enrichment, adj_p_val, contrast)
+writeData(OUT, sheet = "KSEA (all phospho Y features)", x = worksheet)
+
+saveWorkbook(OUT, "supplementary_table_full.xlsx")
+
+```
+
+

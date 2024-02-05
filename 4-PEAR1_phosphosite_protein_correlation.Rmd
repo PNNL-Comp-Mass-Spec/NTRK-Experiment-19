@@ -1,0 +1,211 @@
+---
+title: "Ex19 Phospho proteomics"
+output: html_document
+---
+
+Preliminary summary
+
+
+
+
+```{r include=FALSE}
+library(MSnSet.utils)
+library(clusterProfiler)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(pheatmap)
+library(msigdbr)
+library(stringr)
+
+source("../camilo_helper/helper_scripts.R")
+
+global_crosstab <- read.table("data/global_data/ptrc_ex19_crosstab_global_gene_median_centered.txt", sep = "\t")
+phospho_crosstab <- read.table("data/phospho_data/ptrc_ex19_crosstab_phospho_SiteID_median_centered.txt", sep = "\t")
+phospho_crosstab_Y <- read.table("data/phospho_data_tyrosine/ptrc_ex19_tyrosene_4925_crosstab_tyrisine_4925_phospho_SiteID_median_centered.txt", sep="\t")
+global_crosstab_c <- read.table("data/global_data/ptrc_ex19_crosstab_global_gene_median_centered_corrected.txt", sep = "\t")
+phospho_crosstab_c <- read.table("data/phospho_data/ptrc_ex19_crosstab_phospho_SiteID_median_centered_corrected.txt", sep = "\t")
+phospho_crosstab_Y_c <- read.table("data/phospho_data_tyrosine/ptrc_ex19_crosstab_phospho_Y_SiteID_median_centered_corrected.txt", sep = "\t")
+
+global_crosstab <- global_crosstab[rownames(global_crosstab_c), ]
+phospho_crosstab <- phospho_crosstab[rownames(phospho_crosstab_c), ]
+
+meta_exp19 <- read.table("data/samples.txt", sep = "\t", header = T) %>%
+  select(Sample = MeasurementName, PlexID) %>% filter(!is.na(Sample)) %>%
+  mutate(Sample = sub("/", " ", Sample),
+         PlexID = as.character(PlexID)) %>%
+  mutate(Sample = gsub(" ", "\\.", Sample),
+         bio_group_detailed = sub("Ba\\.F3\\.(.*)\\.Rep\\.[1-9]+$", "\\1", Sample),
+         bio_group = sub('^([A-Za-z1-9]+)\\..+$', "\\1", bio_group_detailed),
+         bgd_ = bio_group_detailed,
+         Group = bgd_)
+rownames(meta_exp19) <- meta_exp19$Sample
+
+m_global <- MSnSet(exprs = global_crosstab[, rownames(meta_exp19)] %>% as.matrix(), 
+                   pData = meta_exp19)
+
+m_phospho <- MSnSet(exprs = phospho_crosstab[, rownames(meta_exp19)] %>% as.matrix(), 
+                    pData = meta_exp19)
+
+m_phospho_Y <- MSnSet(exprs = phospho_crosstab_Y[, rownames(meta_exp19)] %>% as.matrix(), 
+                      pData = meta_exp19)
+
+m_global_c <- MSnSet(exprs = global_crosstab_c[, rownames(meta_exp19)] %>% as.matrix(), 
+                     pData = meta_exp19)
+
+m_phospho_c <- MSnSet(exprs = phospho_crosstab_c[, rownames(meta_exp19)] %>% as.matrix(), 
+                      pData = meta_exp19)
+
+m_phospho_Y_c <- MSnSet(exprs = phospho_crosstab_Y_c[, rownames(meta_exp19)] %>% as.matrix(), 
+                        pData = meta_exp19)
+
+```
+
+
+```{r}
+feature_df <- data.frame(feature = featureNames(m_global))
+
+plot_feature(m_global_c, "PEAR1", color_by = "bio_group")
+plot_feature(m_global_c, "NTRK3", color_by = "bio_group")
+plot_feature(m_phospho_c, "PEAR1-S953s", color_by = "bio_group")
+plot_feature(m_phospho_c, "Spn-S285s", color_by = "bio_group")
+plot_feature(m_phospho_c, "Spn-S357sT378t", color_by = "bio_group")
+```
+
+
+```{r}
+m_ref <- m_global_c
+ref_feature <- "PEAR1"
+m_compare <- m_phospho_c
+
+results <- data.frame()
+
+for (feature in featureNames(m_compare)){
+  pearson_pval = cor.test(exprs(m_global_c)[ref_feature, ], exprs(m_phospho_c)[feature, ], method = "pearson")[[3]]
+  pearson_cor = cor.test(exprs(m_global_c)[ref_feature, ], exprs(m_phospho_c)[feature, ], method = "pearson")[[4]]
+  
+  ## PEAR1 is very regulated, with values within groups very close. So we use pearson, instead of rank based correlations.
+  
+  # spearman_pval = cor.test(exprs(m_global_c)[ref_feature, ], exprs(m_phospho_c)[feature, ], method = "spearman")[[3]]
+  # spearman_cor = cor.test(exprs(m_global_c)[ref_feature, ], exprs(m_phospho_c)[feature, ], method = "spearman")[[4]]
+  kendall_pval = cor.test(exprs(m_global_c)[ref_feature, ], exprs(m_phospho_c)[feature, ], method = "kendall")[[3]]
+  kendall_cor = cor.test(exprs(m_global_c)[ref_feature, ], exprs(m_phospho_c)[feature, ], method = "kendall")[[4]]
+  results <- rbind(results, data.frame(feature = feature, ref_feature = ref_feature, 
+                                       pearson_cor = pearson_cor, pearson_pval = pearson_pval,
+                                       # spearman_cor = spearman_cor, spearman_pval = spearman_pval, 
+                                       kendall_cor = kendall_cor, kendall_pval = kendall_pval
+                                       ))
+}
+
+plot_df <- results %>%
+  select(feature, pearson_cor, pearson_pval)
+plot_df$adj_pval = p.adjust(results$pearson_pval, method = "BH")
+PEAR1_S953 = exprs(m_phospho_c)["PEAR1-S953s",]
+PEAR1_prot = exprs(m_global_c)["PEAR1", ]
+plot(PEAR1_prot, PEAR1_S953, main = paste("pvalue =", cor.test(PEAR1_prot, PEAR1_S953)[[3]]))
+
+p <- ggplot(plot_df, aes(x = adj_pval)) + geom_histogram(fill = "steelblue", color = "black") + 
+      theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust = 1)) + ggtitle("Pearson correlation test")
+p
+```
+
+
+```{r}
+m_ref <- m_global_c
+ref_feature <- "PEAR1"
+m_compare <- m_phospho_Y_c
+
+results <- data.frame()
+
+for (feature in featureNames(m_compare)){
+  pearson_pval = cor.test(exprs(m_ref)[ref_feature, ], exprs(m_compare)[feature, ], method = "pearson")[[3]]
+  pearson_cor = cor.test(exprs(m_ref)[ref_feature, ], exprs(m_compare)[feature, ], method = "pearson")[[4]]
+  
+  ## PEAR1 is very regulated, with values within groups very close. So we use pearson, instead of rank based correlations.
+  
+  # spearman_pval = cor.test(exprs(m_ref)[ref_feature, ], exprs(m_compare)[feature, ], method = "spearman")[[3]]
+  # spearman_cor = cor.test(exprs(m_ref)[ref_feature, ], exprs(m_compare)[feature, ], method = "spearman")[[4]]
+  kendall_pval = cor.test(exprs(m_ref)[ref_feature, ], exprs(m_compare)[feature, ], method = "kendall")[[3]]
+  kendall_cor = cor.test(exprs(m_ref)[ref_feature, ], exprs(m_compare)[feature, ], method = "kendall")[[4]]
+  results <- rbind(results, data.frame(feature = feature, ref_feature = ref_feature, 
+                                       pearson_cor = pearson_cor, pearson_pval = pearson_pval,
+                                       # spearman_cor = spearman_cor, spearman_pval = spearman_pval, 
+                                       kendall_cor = kendall_cor, kendall_pval = kendall_pval
+                                       ))
+}
+
+plot_df <- results %>%
+  select(feature, pearson_cor, pearson_pval)
+plot_df$adj_pval = p.adjust(results$pearson_pval, method = "BH")
+PEAR1_S953 = exprs(m_compare)["Atp1a3-Y549y",]
+PEAR1_prot = exprs(m_ref)["PEAR1", ]
+plot(PEAR1_prot, PEAR1_S953, main = paste("pvalue =", cor.test(PEAR1_prot, PEAR1_S953)[[3]]))
+
+p <- ggplot(plot_df, aes(x = adj_pval)) + geom_histogram(fill = "steelblue", color = "black") + 
+      theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust = 1)) + ggtitle("Pearson correlation test")
+p
+
+
+```
+
+
+
+
+```{r}
+
+load("../BeatAMLproteomics/Misc/load.combined.data 3-09-2022.RData")
+source("../BeatAMLproteomics/util/loading_data.R")
+m_RNA_210 <- make.msnset(RNA.data, "Gene", value = "RNA counts", metadata = meta)
+m_global_210 <- make.msnset(global.data %>% filter(Barcode.ID %in% meta$Barcode.ID), 
+                        "Gene", metadata = meta)
+m_phospho_210 <- make.msnset(phospho.data %>% filter(Barcode.ID %in% meta$Barcode.ID), 
+                         "SiteID", metadata = meta)
+
+```
+
+
+```{r}
+m_ref <- m_RNA_210
+ref_feature <- "PEAR1"
+m_compare <- m_phospho_210[, sampleNames(m_ref)]
+
+results <- data.frame()
+
+for (feature in featureNames(m_compare)){
+  pearson_pval = cor.test(exprs(m_ref)[ref_feature, ], exprs(m_compare)[feature, ], method = "pearson")[[3]]
+  pearson_cor = cor.test(exprs(m_ref)[ref_feature, ], exprs(m_compare)[feature, ], method = "pearson")[[4]]
+  
+  ## PEAR1 is very regulated, with values within groups very close. So we use pearson, instead of rank based correlations.
+  
+  # spearman_pval = cor.test(exprs(m_ref)[ref_feature, ], exprs(m_compare)[feature, ], method = "spearman")[[3]]
+  # spearman_cor = cor.test(exprs(m_ref)[ref_feature, ], exprs(m_compare)[feature, ], method = "spearman")[[4]]
+  kendall_pval = cor.test(exprs(m_ref)[ref_feature, ], exprs(m_compare)[feature, ], method = "kendall")[[3]]
+  kendall_cor = cor.test(exprs(m_ref)[ref_feature, ], exprs(m_compare)[feature, ], method = "kendall")[[4]]
+  results <- rbind(results, data.frame(feature = feature, ref_feature = ref_feature, 
+                                       pearson_cor = pearson_cor, pearson_pval = pearson_pval,
+                                       # spearman_cor = spearman_cor, spearman_pval = spearman_pval, 
+                                       kendall_cor = kendall_cor, kendall_pval = kendall_pval
+                                       ))
+}
+
+plot_df <- results %>%
+  select(feature, pearson_cor, pearson_pval)
+plot_df$adj_pval = p.adjust(results$pearson_pval, method = "BH")
+SHANK3_S686 = exprs(m_compare)["SHANK3-S686s",]
+PEAR1_rna = exprs(m_ref)["PEAR1", ]
+plot(PEAR1_rna, SHANK3_S686, main = paste("pvalue =", cor.test(PEAR1_prot, SHANK3_S686)[[3]]))
+
+p <- ggplot(plot_df, aes(x = adj_pval)) + geom_histogram(fill = "steelblue", color = "black") + 
+      theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust = 1)) + ggtitle("Pearson correlation test")
+p
+
+
+```
+
+
+
+
+
+
+
+
